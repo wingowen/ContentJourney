@@ -1,0 +1,81 @@
+name: 每日热点获取
+
+on:
+  # 每天北京时间 8:00 定时执行（UTC 0:00）
+  schedule:
+    - cron: '0 0 * * *'
+  # 支持手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-hotspots
+  cancel-in-progress: false
+
+jobs:
+  fetch-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. 安装 Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. 安装依赖
+      - name: Install dependencies
+        run: pip install requests
+
+      # 4. 运行抓取脚本
+      - name: Fetch hotspots
+        run: python3 scripts/fetch_hotspots.py
+
+      # 5. LLM 分析（需要 API Key）
+      - name: Analyze hotspots with LLM
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+        run: python3 scripts/analyze_hotspots.py
+
+      # 6. 提交并推送数据
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add hotspots/
+          if git diff --cached --quiet; then
+            echo "没有新数据，跳过提交"
+          else
+            git commit -m "📊 每日热点 $(date -u -d '+8 hours' '+%Y-%m-%d')"
+            git push
+          fi
+
+      # 6. 部署到 GitHub Pages
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build Pages artifact
+        run: |
+          # 将 hotspots/ 目录内容打包为 Pages artifact
+          mkdir -p _site
+          cp -r hotspots/* _site/
+          # 确保 data 目录可访问
+          ls -la _site/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
