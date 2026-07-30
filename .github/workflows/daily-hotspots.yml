@@ -1,11 +1,9 @@
 name: 每日热点获取
 
 on:
-  # 每天北京时间 8:00 定时执行（UTC 0:00）
   schedule:
     - cron: '0 0 * * *'
-  # 支持手动触发
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,25 +18,16 @@ jobs:
   fetch-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出代码
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. 安装 Python
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 3. 安装依赖
-      - name: Install dependencies
-        run: pip install requests
+      - run: pip install requests markdown
 
-      # 4. 运行抓取脚本
-      - name: Fetch hotspots
-        run: python3 scripts/fetch_hotspots.py
+      - run: python3 scripts/fetch_hotspots.py
 
-      # 5. LLM 分析（需要 API Key）
       - name: Analyze hotspots with LLM
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -46,82 +35,39 @@ jobs:
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: python3 scripts/analyze_hotspots.py
 
-      # 6. 提交并推送数据
-      - name: Commit and push
+      - name: Convert index.md to index.html
         run: |
+          python3 -c "
+import markdown as md
+with open('hotspots/index.md') as f:
+    html = md.markdown(f.read(), extensions=['tables', 'fenced_code'])
+with open('hotspots/index.html', 'w') as f:
+    f.write('<html lang=zh-CN><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>ContentJourney 每日热点分析</title><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/water.css@2/out/water.css><body>')
+    f.write(html)
+    f.write('</body></html>')
+print('OK')
+"
+
+      - run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add hotspots/
           if git diff --cached --quiet; then
-            echo "没有新数据，跳过提交"
+            echo "no new data"
           else
-            git commit -m "📊 每日热点 $(date -u -d '+8 hours' '+%Y-%m-%d')"
+            git commit -m "daily hotspots $(date -u -d '+8 hours' '+%Y-%m-%d')"
             git push
           fi
 
-      # 6. 部署到 GitHub Pages
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v5
 
-      - name: Convert Markdown to HTML
-        run: |
-          pip install markdown
-          python3 -c "
-import markdown, os
-
-md_path = 'hotspots/index.md'
-html_path = 'hotspots/index.html'
-
-with open(md_path, 'r') as f:
-    md = f.read()
-
-body = markdown.markdown(md, extensions=['tables', 'fenced_code'])
-
-html = f'''<!DOCTYPE html>
-<html lang=\"zh-CN\">
-<head>
-<meta charset=\"UTF-8\">
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
-<title>ContentJourney 每日热点分析</title>
-<style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.8; color: #333; }}
-h1, h2, h3 {{ color: #1a1a1a; margin-top: 1.5em; }}
-a {{ color: #0366d6; text-decoration: none; }}
-a:hover {{ text-decoration: underline; }}
-blockquote {{ border-left: 4px solid #ddd; margin: 1em 0; padding: 0 15px; color: #666; }}
-code {{ background: #f6f8fa; padding: 2px 5px; border-radius: 3px; font-size: 0.9em; }}
-pre {{ background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }}
-hr {{ border: none; border-top: 1px solid #ddd; margin: 2em 0; }}
-ul {{ padding-left: 20px; }}
-li {{ margin: 0.5em 0; }}
-table {{ border-collapse: collapse; width: 100%; }}
-th, td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
-th {{ background: #f6f8fa; }}
-</style>
-</head>
-<body>
-{body}
-</body>
-</html>'''
-
-with open(html_path, 'w') as f:
-    f.write(html)
-print('index.html 生成成功')
-"
-
-      - name: Build Pages artifact
-        run: |
-          # 将 hotspots/ 目录内容打包为 Pages artifact
+      - run: |
           mkdir -p _site
           cp -r hotspots/* _site/
-          # 确保 data 目录可访问
           ls -la _site/
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4
