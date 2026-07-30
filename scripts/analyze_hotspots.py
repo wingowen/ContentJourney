@@ -30,7 +30,7 @@ INDEX_FILE = REPO_ROOT / "hotspots" / "index.md"
 
 API_KEY = os.environ.get("OPENAI_API_KEY", "")
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+MODEL = os.environ.get("OPENAI_MODEL", "agnes-2.0-flash")
 
 TIMEOUT = 60
 
